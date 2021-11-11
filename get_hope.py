@@ -30,7 +30,10 @@ def get_hope(vlf_time):
       unixtime.append(time.mktime(timestamps[p].timetuple()))
     time_grid0=np.array(unixtime)
   #### grid with temp anisotropy as a function of time (row) and energy (column, increasing)
-    e_ani0=(mat_contents['HOPE'][0][1][5,:,:]/(mat_contents['HOPE'][0][1][1,:,:]+mat_contents['HOPE'][0][1][9,:,:])).T
+    #e_ani0=(mat_contents['HOPE'][0][1][5,:,:]/(mat_contents['HOPE'][0][1][1,:,:]+mat_contents['HOPE'][0][1][9,:,:])).T
+    e_perp=0.33*(mat_contents['HOPE'][0][1][4,:,:]+mat_contents['HOPE'][0][1][5,:,:]+mat_contents['HOPE'][0][1][6,:,:]).T
+    e_par=0.25*(mat_contents['HOPE'][0][1][1,:,:]+mat_contents['HOPE'][0][1][2,:,:]+mat_contents['HOPE'][0][1][9,:,:]+mat_contents['HOPE'][0][1][8,:,:]).T
+    e_ani0=e_perp/e_par
     e_ani0[~np.isfinite(np.abs(e_ani0))] = np.nan
     e_range0=mat_contents['HOPE'][0][3]
   
@@ -42,7 +45,7 @@ def get_hope(vlf_time):
       u=u+1
     else:
       hope[0]=np.concatenate([ hope[0],time_grid0 ],axis=0) #time
-      hope[1]=np.concatenate([ hope[1], e_ani0 ],axis=0) #phase space density
+      hope[1]=np.concatenate([ hope[1], e_ani0 ],axis=0) #e anisotropy
       hope[2]=np.concatenate([ hope[2], e_range0 ],axis=0) #energy level
     print(str(i))   
 

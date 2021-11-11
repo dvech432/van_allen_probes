@@ -149,13 +149,33 @@ fesa = pickle.load(open(filename, 'rb'))
 print('Step 10 started')
 from get_hope import get_hope
 hope_interp, hope_energy = get_hope(vlf[5])
+
+
+# 11), get MagEIS data
+print('Step 11 started')
+from get_mageis import get_mageis
+mageis_interp, mageis_energy = get_mageis(vlf[5])
 ################## everything is ready for plotting
 
-################# write data into file for Dmitri
-# unix time, mlt, mlat, lshell, node ID
+# %%
+################# write data into file for Dmitri and save it
+RBSP=[]
+# unix time, mlt, mlat, lshell, density, node ID
+RBSP.append(vlf[5]) # b time in unix format
+RBSP.append(predictions) # SOM label
+RBSP.append(vlf[7]) # mlt
+RBSP.append(vlf[8]) # mlat
+RBSP.append(vlf[9]) # lshell
+RBSP.append(den_interp) # electron density
+RBSP.append(dst_interp) # dst index
 
+from scipy.io import savemat
+filename=(r'D:\Research\Data\Van_Allen_Probes\Dmitri.mat')
+savemat(filename, {"foo":RBSP})
 
-
+#import pickle
+#filename=(r'D:\Research\Data\Van_Allen_Probes\Dmitri.sav')
+#pickle.dump(RBSP, open(filename, 'wb'))
 # %% make summary plots
 
 # 1) normalized E-spin
@@ -524,7 +544,117 @@ for i in range(0,100):
     plt.close()
 
 
+# %% summary plots, round 4, plotting MagEIS for each node
 
+# 1) normalized E-spin
+# 2) non-normalized E-spin+E-axial
+# 3) spin + axial converted to B-fiedl
+# 4) spatial location
+
+data=readsav(r'D:\Research\Data\Van_Allen_Probes\rbsp_hiss_hsr_a_Espin_noise.sav')
+n_floor=np.reshape(data['espin_noise_floor_sigmas'],(-1,1)).T # use 1 sigma above noise floor
+
+data=readsav(r'D:\Research\Data\Van_Allen_Probes\rbsp_hiss_hsr_a_scm_noise_low_gain.sav')
+scm_floor=np.reshape(data['scm_noise_floor_levels']+data['scm_noise_floor_sigmas'],(-1,1)).T # use 1 sigma above noise floor
+
+data=readsav(r'D:\Research\Data\Van_Allen_Probes\rbsp_EMFISIS_freq_and_bandwidth.sav')
+freq=np.reshape(data['freqs'][0:50],(-1,1)).T
+freq_long=np.reshape(data['freqs'][0:65],(-1,1)).T
+
+## transform E-field data into B-field
+m=1.67272*10**-27 # proton mass
+m_e=9.109383*10**-31
+q=1.60217662*10**-19 # charge
+kb=1.38064852*10**-23 # boltzmann constant
+c=299792458 # speed of light
+eps0= 8.854187*10**-12
+
+
+import matplotlib.pyplot as plt
+for i in range(0,100):    
+    
+    fig, axs = plt.subplots(2, 2)
+    
+    #### PANEL 1
+    Y=np.nanmedian((mageis_interp[np.argwhere((predictions==i)),:]),axis=0)
+    err=np.nanstd((mageis_interp[np.argwhere((predictions==i)),:]),axis=0)
+    #axs[0, 0].errorbar(mageis_energy[0:21], np.squeeze(Y)[0:21], yerr=np.squeeze(err)[0:21])
+    axs[0, 0].scatter(mageis_energy[0:21], np.squeeze(Y)[0:21])
+    axs[0, 0].set_title('Electron anisotropy, id: ' + str(i) + ', #: ' + str(len(np.argwhere((predictions==i) ))))
+    axs[0, 0].set_xscale('log')  
+    axs[0, 0].set_xlabel('[keV]')
+    axs[0, 0].set_ylabel('[(90 deg)/(0 deg + 180 deg) ]')
+    axs[0, 0].set_ylim( (0,7.5)) 
+    axs[0, 0].plot(mageis_energy[0:21], np.full((len(mageis_energy[0:21]),1),1) )
+    axs[0, 0].grid(True)
+     
+    #### PANEL 2
+    #### take that spin axis data that belong to node i
+    E_spin=vlf[1][:,np.argwhere((predictions==i))] 
+    E_spin=np.squeeze(E_spin,axis=2)
+    #### replace those frequency bins that are below the noise floor
+    for j in range(0,np.shape(n_floor)[1]):
+      below_floor=np.argwhere(np.log10(E_spin[j,:])<n_floor[0,j])
+      E_spin[j,below_floor]=np.nan
+     
+    ### add the spin and axial data 
+    Y=np.nanmean(np.log10(E_spin+np.squeeze(vlf[2][:,np.argwhere((predictions==i))],axis=2)),axis=1)
+    err=np.nanstd(np.log10(E_spin+np.squeeze(vlf[2][:,np.argwhere((predictions==i))],axis=2)),axis=1)
+    axs[0, 1].errorbar(np.squeeze((freq)), Y[0:50], yerr=err[0:50])
+    axs[0, 1].set_title('Cleaned E spin + E axial')
+    axs[0, 1].set_xscale('log')  
+    axs[0, 1].set_xlabel('[Hz]')
+    axs[0, 1].set_ylabel('[(V/m)^2/Hz]') 
+    axs[0, 1].grid(True)
+    axs[0, 1].set_ylim( (-13,-6)) 
+    
+    #### PANEL 3
+    ### Create the 2D grid of B-field values (derived from E-field), take the avg and std and plot it
+    ## plasma frequency
+    f_pe=np.sqrt(den_interp[np.argwhere((predictions==i))]*100**3*q**2/(m_e*eps0))/(2*np.pi)
+    ## electron cyclotron frequency
+    f_ce=(q*(vlf[4][np.argwhere((predictions==i))]*10**-9)/m_e)/(2*np.pi)
+     
+    axs[1,0].hist(den_interp[np.argwhere((predictions==i))],edgecolor='black',bins=10**(np.linspace(1,4.5,10)) )
+    axs[1, 0].set_xlabel('Electron density [cm^-3]')
+    axs[1, 0].set_xscale('log')
+    axs[1, 0].set_ylabel('# of occurrence') 
+    axs[1, 0].grid(True)
+    
+    #### PANEL 4    
+    axs[1, 1].hist(f_pe/f_ce,edgecolor='black',bins=10**(np.linspace(-1,1.5,15)) )
+    axs[1, 1].set_xlabel('f_pe/f_ce')
+    axs[1, 1].set_ylabel('# of occurrence') 
+    axs[1, 1].grid(True)
+    axs[1, 1].set_xscale('log')
+    
+    # POLAR STUFF
+    # xx=vlf[9][np.argwhere((predictions==i))]
+    # xx = xx[~np.isnan(xx)]
+    # yy=vlf[7][np.argwhere((predictions==i))]
+    # yy = yy[~np.isnan(yy)]
+    
+    # # Polar histogram
+    # rbins = np.linspace(0, 7,7)
+    # abins = np.linspace(-np.pi, np.pi, 16)
+
+    # hist, _, _ = np.histogram2d(180*((yy-12)/12)*np.pi/180, xx, bins=(abins, rbins))
+    # A, R = np.meshgrid(abins, rbins)
+    
+    # axs[1,1] = plt.subplot2grid((2,2), (1,1), polar=True)
+    # axs[1,1].pcolormesh(A, R, (hist.T/np.sum(hist)), cmap="viridis") #vmin=-6, vmax=-2
+    # axs[1,1].grid(True)
+    
+    fig.tight_layout()
+    plt.show()
+    
+    filename = r'D:\Research\Data\Van_Allen_Probes\SOM_figures_HOPE\\' + str(i).zfill(3) + '_QQ.jpg'
+    fig.savefig(filename,bbox_inches='tight')
+   
+    plt.clf()
+    fig.clear('all')
+    plt.close(fig)
+    plt.close()
 
 
 # %%
